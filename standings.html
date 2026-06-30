@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>World Cup 2026 Roblisserie League</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0e1a;
+      color: #e8eaf0;
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: linear-gradient(135deg, #f5a623, #e8c84a);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      margin-top: 6px;
+      color: #8899aa;
+      font-size: 0.85rem;
+    }
+
+    #status {
+      text-align: center;
+      font-size: 0.8rem;
+      color: #5577aa;
+      margin-bottom: 28px;
+    }
+
+    #status.error { color: #e06060; }
+
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #f5a623;
+      margin-bottom: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      margin-bottom: 40px;
+      border-radius: 10px;
+      border: 1px solid #1e2a3a;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      min-width: 580px;
+    }
+
+    th {
+      background: #111827;
+      color: #8899aa;
+      font-weight: 600;
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 10px 14px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    th:first-child { text-align: left; }
+
+    td {
+      padding: 9px 14px;
+      text-align: right;
+      border-top: 1px solid #1a2234;
+    }
+
+    td:first-child { text-align: left; font-weight: 500; }
+
+    tr:hover td { background: #131c2e; }
+
+    .rank { color: #556677; font-size: 0.8rem; margin-right: 6px; }
+
+    .pts-col { color: #f5c842; font-weight: 700; }
+
+    .summary-row td {
+      background: #111827;
+      border-top: 2px solid #2a3a55;
+      color: #ccd6e8;
+      font-weight: 600;
+    }
+
+    .owner-section {
+      margin-bottom: 48px;
+    }
+
+    .owner-section .section-title {
+      font-size: 0.95rem;
+      color: #7ec8f0;
+      margin-bottom: 8px;
+    }
+
+    .flag { margin-right: 6px; font-size: 1.1em; }
+
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚽ World Cup 2026 Roblisserie League</h1>
+  <p>Updated live from match results</p>
+</header>
+
+<div id="status">Loading match data…</div>
+
+<div id="app"></div>
+
+<script>
+// ─── ROSTERS ────────────────────────────────────────────────────────────────
+const OWNERS = [
+  { name: "David",   countries: ["France","Croatia","Japan","Scotland","Algeria","Iraq"] },
+  { name: "Chris",   countries: ["Brazil","Mexico","Canada","Côte d'Ivoire","Iran","Haiti"] },
+  { name: "Raul",    countries: ["Argentina","United States","Uruguay","Ghana","Australia","Curaçao"] },
+  { name: "DougEd",  countries: ["Spain","Switzerland","Ecuador","Egypt","DR Congo","Cabo Verde"] },
+  { name: "Mark",    countries: ["Germany","Belgium","Bosnia and Herzegovina","Paraguay","Saudi Arabia","Qatar"] },
+  { name: "Erik",    countries: ["England","Norway","Turkey","South Korea","Tunisia","New Zealand"] },
+  { name: "Patrick", countries: ["Portugal","Morocco","Sweden","Austria","Uzbekistan","Jordan"] },
+  { name: "Greg",    countries: ["Netherlands","Colombia","Senegal","Czechia","South Africa","Panama"] },
+];
+
+// Name aliases: openfootball name → canonical name used above
+const ALIASES = {
+  "USA":                         "United States",
+  "United States":               "United States",
+  "United States of America":    "United States",
+  "Ivory Coast":                 "Côte d'Ivoire",
+  "Côte d'Ivoire":               "Côte d'Ivoire",
+  "Cote d'Ivoire":               "Côte d'Ivoire",
+  "Curacao":                     "Curaçao",
+  "Curaçao":                     "Curaçao",
+  "Congo DR":                    "DR Congo",
+  "DR Congo":                    "DR Congo",
+  "Democratic Republic of the Congo": "DR Congo",
+  "Bosnia & Herzegovina":        "Bosnia and Herzegovina",
+  "Bosnia and Herzegovina":      "Bosnia and Herzegovina",
+  "Bosnia-Herzegovina":          "Bosnia and Herzegovina",
+  "Türkiye":                     "Turkey",
+  "Turkey":                      "Turkey",
+  "Korea Republic":              "South Korea",
+  "Korea, Republic of":          "South Korea",
+  "South Korea":                 "South Korea",
+  "Republic of Korea":           "South Korea",
+  "Cape Verde":                  "Cabo Verde",
+  "Cabo Verde":                  "Cabo Verde",
+  "Czech Republic":              "Czechia",
+  "Czechia":                     "Czechia",
+  "New Zealand":                 "New Zealand",
+};
+
+function canonicalize(name) {
+  if (!name) return name;
+  const trimmed = name.trim();
+  return ALIASES[trimmed] || trimmed;
+}
+
+// All tracked countries (canonical names)
+const ALL_COUNTRIES = [...new Set(OWNERS.flatMap(o => o.countries))];
+
+// ─── SCORING ────────────────────────────────────────────────────────────────
+// Win: 3pts + goals; Loss: goals only; Tie w/goals: 1pt + goals; 0-0 tie: -1pt
+function calcPoints(wins, losses, ties, zeroZeroTies, goalsFor) {
+  return wins * 3 + ties * 1 + zeroZeroTies * -1 + goalsFor;
+}
+
+// ─── STATS ACCUMULATION ─────────────────────────────────────────────────────
+function emptyStats() {
+  return { wins: 0, losses: 0, ties: 0, zeroZeroTies: 0, goalsFor: 0, goalsAgainst: 0 };
+}
+
+function processMatches(events) {
+  const stats = {};
+  ALL_COUNTRIES.forEach(c => stats[c] = emptyStats());
+
+  for (const event of events) {
+    const comp = event.competitions?.[0];
+    if (!comp) continue;
+
+    // Only process completed matches
+    if (!comp.status?.type?.completed) continue;
+
+    const competitors = comp.competitors;
+    if (!competitors || competitors.length < 2) continue;
+
+    // ESPN always provides two competitors
+    const teamA = competitors[0];
+    const teamB = competitors[1];
+
+    const g1 = parseInt(teamA.score, 10);
+    const g2 = parseInt(teamB.score, 10);
+    if (isNaN(g1) || isNaN(g2)) continue;
+
+    const c1 = canonicalize(teamA.team?.displayName);
+    const c2 = canonicalize(teamB.team?.displayName);
+
+    const track1 = stats[c1] !== undefined;
+    const track2 = stats[c2] !== undefined;
+    if (!track1 && !track2) continue;
+
+    const isDraw = g1 === g2;
+    const isZeroZero = isDraw && g1 === 0;
+    // Knockout rounds (round-of-32, round-of-16, quarterfinals, etc.) never end in a tie;
+    // if scores are level, the PK winner is flagged via competitors[].winner
+    const isKnockout = event.season?.slug !== 'group-stage';
+
+    if (track1) {
+      stats[c1].goalsFor     += g1;
+      stats[c1].goalsAgainst += g2;
+      if (isDraw && isKnockout) {
+        // Tied after 90/ET — use winner flag (PK result), no tie recorded
+        if (teamA.winner) stats[c1].wins++;
+        else              stats[c1].losses++;
+      } else if (isDraw)       { stats[c1].ties++; if (isZeroZero) stats[c1].zeroZeroTies++; }
+      else if (g1 > g2) stats[c1].wins++;
+      else              stats[c1].losses++;
+    }
+    if (track2) {
+      stats[c2].goalsFor     += g2;
+      stats[c2].goalsAgainst += g1;
+      if (isDraw && isKnockout) {
+        if (teamB.winner) stats[c2].wins++;
+        else              stats[c2].losses++;
+      } else if (isDraw)       { stats[c2].ties++; if (isZeroZero) stats[c2].zeroZeroTies++; }
+      else if (g2 > g1) stats[c2].wins++;
+      else              stats[c2].losses++;
+    }
+  }
+  return stats;
+}
+
+// ─── RENDER ─────────────────────────────────────────────────────────────────
+const FLAG_MAP = {
+  "France":"🇫🇷","Croatia":"🇭🇷","Japan":"🇯🇵","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿","Algeria":"🇩🇿","Iraq":"🇮🇶",
+  "Brazil":"🇧🇷","Mexico":"🇲🇽","Canada":"🇨🇦","Côte d'Ivoire":"🇨🇮","Iran":"🇮🇷","Haiti":"🇭🇹",
+  "Argentina":"🇦🇷","United States":"🇺🇸","Uruguay":"🇺🇾","Ghana":"🇬🇭","Australia":"🇦🇺","Curaçao":"🇨🇼",
+  "Spain":"🇪🇸","Switzerland":"🇨🇭","Ecuador":"🇪🇨","Egypt":"🇪🇬","DR Congo":"🇨🇩","Cabo Verde":"🇨🇻",
+  "Germany":"🇩🇪","Belgium":"🇧🇪","Bosnia and Herzegovina":"🇧🇦","Paraguay":"🇵🇾","Saudi Arabia":"🇸🇦","Qatar":"🇶🇦",
+  "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Norway":"🇳🇴","Turkey":"🇹🇷","South Korea":"🇰🇷","Tunisia":"🇹🇳","New Zealand":"🇳🇿",
+  "Portugal":"🇵🇹","Morocco":"🇲🇦","Sweden":"🇸🇪","Austria":"🇦🇹","Uzbekistan":"🇺🇿","Jordan":"🇯🇴",
+  "Netherlands":"🇳🇱","Colombia":"🇨🇴","Senegal":"🇸🇳","Czechia":"🇨🇿","South Africa":"🇿🇦","Panama":"🇵🇦",
+};
+
+function flag(country) {
+  return FLAG_MAP[country] ? `<span class="flag">${FLAG_MAP[country]}</span>` : '';
+}
+
+function row(cells, isHeader = false, extraClass = '') {
+  const tag = isHeader ? 'th' : 'td';
+  return `<tr class="${extraClass}">${cells.map(c => `<${tag}>${c}</${tag}>`).join('')}</tr>`;
+}
+
+function tableHeaders() {
+  return row(['', 'W', 'L', 'T', '0-0', 'GF', 'GA', 'PTS'], true);
+}
+
+function countryRow(country, s) {
+  const pts = calcPoints(s.wins, s.losses, s.ties, s.zeroZeroTies, s.goalsFor);
+  return row([
+    `${flag(country)}${country}`,
+    s.wins, s.losses, s.ties, s.zeroZeroTies, s.goalsFor, s.goalsAgainst,
+    `<span class="pts-col">${pts}</span>`
+  ]);
+}
+
+function summaryRow(countries, countryStats) {
+  let w=0, l=0, t=0, zz=0, gf=0, ga=0;
+  countries.forEach(c => {
+    const s = countryStats[c] || emptyStats();
+    w += s.wins; l += s.losses; t += s.ties; zz += s.zeroZeroTies;
+    gf += s.goalsFor; ga += s.goalsAgainst;
+  });
+  const pts = calcPoints(w, l, t, zz, gf);
+  return row([
+    'TOTAL', w, l, t, zz, gf, ga,
+    `<span class="pts-col">${pts}</span>`
+  ], false, 'summary-row');
+}
+
+function ownerTotalPoints(owner, countryStats) {
+  let w=0, l=0, t=0, zz=0, gf=0;
+  owner.countries.forEach(c => {
+    const s = countryStats[c] || emptyStats();
+    w += s.wins; l += s.losses; t += s.ties; zz += s.zeroZeroTies; gf += s.goalsFor;
+  });
+  return calcPoints(w, l, t, zz, gf);
+}
+
+function render(countryStats, lastUpdated) {
+  // Sort owners by total points desc
+  const sorted = [...OWNERS].sort((a, b) =>
+    ownerTotalPoints(b, countryStats) - ownerTotalPoints(a, countryStats)
+  );
+
+  let html = '';
+
+  // ── Overall standings ──
+  html += `<div class="section-title">Overall Standings</div>`;
+  html += `<div class="table-wrap"><table>`;
+  html += `<thead>${row(['Owner', 'W', 'L', 'T', '0-0', 'GF', 'GA', 'PTS'], true)}</thead><tbody>`;
+
+  sorted.forEach((owner, i) => {
+    let w=0, l=0, t=0, zz=0, gf=0, ga=0;
+    owner.countries.forEach(c => {
+      const s = countryStats[c] || emptyStats();
+      w += s.wins; l += s.losses; t += s.ties; zz += s.zeroZeroTies;
+      gf += s.goalsFor; ga += s.goalsAgainst;
+    });
+    const pts = calcPoints(w, l, t, zz, gf);
+    html += row([
+      `<span class="rank">${i+1}</span>${owner.name}`,
+      w, l, t, zz, gf, ga,
+      `<span class="pts-col">${pts}</span>`
+    ]);
+  });
+
+  html += `</tbody></table></div>`;
+
+  // ── Per-owner tables ──
+  html += `<div class="section-title" style="margin-top:16px">Roster Breakdown</div>`;
+
+  sorted.forEach(owner => {
+    html += `<div class="owner-section">`;
+    html += `<div class="section-title">${owner.name}</div>`;
+    html += `<div class="table-wrap"><table>`;
+    html += `<thead>${tableHeaders()}</thead><tbody>`;
+    owner.countries.forEach(c => {
+      html += countryRow(c, countryStats[c] || emptyStats());
+    });
+    html += summaryRow(owner.countries, countryStats);
+    html += `</tbody></table></div></div>`;
+  });
+
+  document.getElementById('app').innerHTML = html;
+
+  const ts = lastUpdated ? `Last updated: ${lastUpdated}` : '';
+  const src = 'Data: <a href="https://www.espn.com/soccer/scoreboard/_/league/fifa.world" target="_blank" style="color:#4488aa">ESPN</a>';
+  document.getElementById('status').innerHTML = [ts, src].filter(Boolean).join(' · ');
+  document.getElementById('status').classList.remove('error');
+}
+
+// ─── DATA FETCH ─────────────────────────────────────────────────────────────
+// ESPN unofficial scoreboard API — no key required, updates in real time
+const DATA_URL = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=200&dates=20260611-20260719';
+
+async function load() {
+  try {
+    const res = await fetch(DATA_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    const events = data.events || [];
+    const stats = processMatches(events);
+    const ts = new Date().toLocaleString();
+    render(stats, ts);
+  } catch (err) {
+    console.error(err);
+    // Render zeroed-out table so layout is still visible
+    const emptyStats = {};
+    ALL_COUNTRIES.forEach(c => emptyStats[c] = { wins:0, losses:0, ties:0, zeroZeroTies:0, goalsFor:0, goalsAgainst:0 });
+    render(emptyStats, null);
+    document.getElementById('status').textContent = `Could not load live data (${err.message}). Showing zeroed standings — results will appear once the tournament begins.`;
+    document.getElementById('status').classList.add('error');
+  }
+}
+
+load();
+
+// Auto-refresh every 5 minutes
+setInterval(load, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
